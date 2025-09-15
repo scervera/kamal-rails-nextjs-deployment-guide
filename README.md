@@ -10,6 +10,7 @@ A comprehensive guide to deploying a full-stack application with Rails API backe
 - [Project Structure](#project-structure)
 - [Configuration Files](#configuration-files)
 - [Deployment Process](#deployment-process)
+- [Automated Deployment Script](#automated-deployment-script)
 - [Troubleshooting](#troubleshooting)
 - [Best Practices](#best-practices)
 
@@ -528,34 +529,219 @@ kamal remove -c config/deploy.yml
 - **Rollback plan**: Test deployment rollback procedures
 - **Documentation**: Keep deployment docs current
 
-## Sample Deployment Script
+## Automated Deployment Script
 
-Here's a sample automated deployment script:
+The project includes a comprehensive deployment automation script that handles the entire setup and deployment process. This script significantly simplifies the deployment workflow by automating configuration generation, secret management, and deployment orchestration.
+
+### Script Overview
+
+The `kamal_setup_and_deploy.sh.example` script provides:
+
+- **Interactive configuration collection** with validation
+- **Automatic secret generation** (Rails master key, JWT secrets, database passwords)
+- **Configuration file generation** for both API and frontend
+- **Deployment orchestration** with proper sequencing
+- **Container cleanup** and conflict resolution
+- **Two deployment modes**: Developer and Customer
+
+### Usage
+
+#### 1. Setup the Script
 
 ```bash
-#!/bin/bash
-set -e
+# Copy the example script to a working version
+cp kamal_setup_and_deploy.sh.example setup_kamal.sh
 
-echo "🚀 Starting deployment process..."
+# Make it executable
+chmod +x setup_kamal.sh
 
-# Deploy API first
-echo "📦 Deploying Rails API..."
+# Edit the script to replace placeholder values
+nano setup_kamal.sh
+```
+
+**Important**: Before using the script, you must replace all placeholder values:
+- `your-registry.com` → Your actual registry URL
+- `your-namespace` → Your actual registry namespace  
+- `your-app-api` → Your actual API image name
+- `your-app-web` → Your actual web image name
+- `yourdomain.com` → Your actual domain
+
+#### 2. Run the Script
+
+```bash
+# Customer mode (pull existing images)
+./setup_kamal.sh
+
+# Developer mode (build and push images)
+./setup_kamal.sh --dev
+
+# Show help
+./setup_kamal.sh --help
+```
+
+### Deployment Modes
+
+#### Customer Mode (Default)
+- **Purpose**: Deploy pre-built images from registry
+- **Use case**: Production deployments, customer installations
+- **Process**: Pulls existing images, skips build process
+- **Requirements**: Read-only registry access token
+
+#### Developer Mode (`--dev`)
+- **Purpose**: Build and deploy fresh images
+- **Use case**: Development, testing, image updates
+- **Process**: Builds new images, pushes to registry, then deploys
+- **Requirements**: Read/write registry access token
+
+### Configuration Process
+
+The script interactively collects:
+
+#### Domain Configuration
+- **Frontend domain**: Where users access the application
+- **DNS validation**: Checks if domain resolves correctly
+- **API routing**: Automatically configures `/api` path prefix
+
+#### Server Configuration
+- **Deployment server**: Hostname or IP address
+- **SSH credentials**: Username and port
+- **Platform selection**: AMD64 or ARM64 architecture
+
+#### Registry Configuration
+- **Registry server**: Container registry URL
+- **Authentication**: Access token management
+- **Image names**: API and web image identifiers
+
+#### Database & Storage
+- **PostgreSQL**: Database name and secure password generation
+- **Redis**: Cache and job queue configuration
+- **Storage**: Local storage with persistent volumes
+
+#### Security & SSL
+- **Let's Encrypt**: SSL certificate configuration
+- **Secret generation**: Automatic Rails master key and JWT secrets
+- **Environment**: Production or custom environment settings
+
+### Script Features
+
+#### Automatic Secret Management
+```bash
+# Generates secure secrets automatically
+RAILS_MASTER_KEY=$(openssl rand -hex 16)
+JWT_SECRET_KEY=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$(user-provided secure password)
+```
+
+#### Configuration File Generation
+The script creates:
+- `apps/api/config/deploy.yml` - Rails API Kamal configuration
+- `apps/api/.kamal/secrets` - Encrypted API secrets
+- `apps/web/config/deploy.yml` - Next.js frontend configuration  
+- `apps/web/.kamal/secrets` - Frontend secrets
+
+#### Container Cleanup
+- **Conflict detection**: Identifies existing containers
+- **Cleanup options**: Multiple cleanup strategies
+- **Data preservation**: Safe removal of conflicting deployments
+
+#### Deployment Orchestration
+1. **API deployment first**: Creates database and Redis accessories
+2. **Frontend deployment**: Configures proxy routing
+3. **Health checks**: Validates successful deployment
+4. **Lock management**: Prevents concurrent deployments
+
+### Example Workflow
+
+```bash
+# 1. Run the script
+./setup_kamal.sh --dev
+
+# 2. Follow interactive prompts
+# - Enter domain: assets.yourdomain.com
+# - Enter server: cloud.yourdomain.com  
+# - Enter registry token: your-token-here
+# - Enter database password: secure-password
+# - Enter SSL email: admin@yourdomain.com
+
+# 3. Review configuration summary
+# - Verify all settings are correct
+# - Choose cleanup options if needed
+
+# 4. Deploy
+# - API deploys first (creates database/Redis)
+# - Frontend deploys second (configures routing)
+# - Application becomes available at configured domain
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+**Domain Resolution Errors**
+```bash
+# Script validates domain resolution
+# If domain doesn't resolve, you can:
+# 1. Fix DNS records first
+# 2. Continue anyway (if DNS will be configured later)
+```
+
+**Registry Authentication**
+```bash
+# If you get authentication errors:
+# 1. Verify your registry token is correct
+# 2. Check token permissions (read vs read/write)
+# 3. Ensure token hasn't expired
+```
+
+**Container Conflicts**
+```bash
+# Script offers multiple cleanup options:
+# 1. Remove only application containers (recommended)
+# 2. Skip cleanup (may cause issues)
+# 3. Remove all Docker objects
+# 4. Complete server wipe (nuclear option)
+```
+
+#### Manual Deployment
+
+If the script fails, you can deploy manually:
+
+```bash
+# Deploy API
 cd apps/api
 kamal setup -c config/deploy.yml
 kamal deploy -c config/deploy.yml
-cd ../..
 
-# Deploy frontend
-echo "🌐 Deploying Next.js Frontend..."
-cd apps/web
+# Deploy frontend  
+cd ../web
 kamal setup -c config/deploy.yml
 kamal deploy -c config/deploy.yml
-cd ../..
-
-echo "✅ Deployment completed successfully!"
-echo "🌐 Frontend: http://yourdomain.com"
-echo "🔧 API: http://yourdomain.com/api"
 ```
+
+### Security Considerations
+
+- **Secrets file**: Never commit `.kamal/secrets` to version control
+- **Registry tokens**: Store securely, rotate regularly
+- **Database passwords**: Use strong, unique passwords
+- **SSL certificates**: Let's Encrypt handles automatic renewal
+
+### Post-Deployment
+
+After successful deployment:
+
+```bash
+# Access your application
+curl -I http://yourdomain.com          # Frontend
+curl -I http://yourdomain.com/api      # API
+
+# Check deployment status
+kamal app details -c config/deploy.yml
+
+# View logs
+kamal app logs -c config/deploy.yml
+```
+
+The script provides a complete, production-ready deployment solution that handles all the complexity of Kamal configuration and deployment orchestration.
 
 ## Conclusion
 
