@@ -111,7 +111,7 @@ servers:
 # API accessible through proxy with path-based routing
 proxy:
   host: yourdomain.com
-  path_prefix: /api
+  path_prefix: /data # the name of this path is arbitrary. Kamal strips it off when constructing the final path. It is necessary however!
   ssl: false
   app_port: 3000
 
