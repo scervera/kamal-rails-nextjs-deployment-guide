@@ -109,6 +109,8 @@ servers:
     cmd: bash -lc "until pg_isready -h api-postgres -p 5432 -U postgres; do echo 'Waiting for database...'; sleep 2; done && bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p 3000"
 
 # API accessible through proxy with path-based routing
+# NOTE regarding path_prefix. This is an essential part of the structure to ensure that any api related requests are directed to the API if they are # preceded with this /data prefix. Kamal handles stripping them before they actually hit the API. This is necessary in our case because both 
+# the frontend and api are exposed through kamal-proxy with the same hostname.
 proxy:
   host: yourdomain.com
   path_prefix: /data # the name of this path is arbitrary. Kamal strips it off when constructing the final path. It is necessary however!
