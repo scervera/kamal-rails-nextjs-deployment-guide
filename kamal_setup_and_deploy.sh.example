@@ -1,30 +1,11 @@
 #!/bin/bash
 set -e
 
-# =============================================================================
-# EXAMPLE KAMAL SETUP AND DEPLOYMENT SCRIPT
-# =============================================================================
-# 
-# This is an example script for deploying Rails API + Next.js Frontend using Kamal.
-# 
-# IMPORTANT: This is a template file with placeholder values.
-# Before using this script:
-# 1. Copy this file to a new name (e.g., setup_kamal.sh)
-# 2. Replace all placeholder values with your actual configuration:
-#    - your-registry.com → your actual registry URL
-#    - your-namespace → your actual registry namespace
-#    - your-app-api → your actual API image name
-#    - your-app-web → your actual web image name
-#    - yourdomain.com → your actual domain
-#    - your-secure-password → your actual secure password
-# 3. Make the script executable: chmod +x setup_kamal.sh
-# 4. Run the script: ./setup_kamal.sh
-#
+# Enhanced Kamal Setup Script for Asset Management System
 # This script handles the complete deployment workflow from configuration to deployment
-# =============================================================================
 
-echo "🚀 Kamal Deployment Setup for Rails API + Next.js Frontend"
-echo "========================================================="
+echo "🚀 Kamal Deployment Setup for Asset Management System"
+echo "=================================================="
 
 # Colors for output
 RED='\033[0;31m'
@@ -71,15 +52,90 @@ show_summary() {
     echo ""
 }
 
+# Function to load configuration from .env.setup_kamal file
+load_env_config() {
+    local env_file=".env.setup_kamal"
+    
+    if [ ! -f "$env_file" ]; then
+        echo -e "${RED}❌ Error: .env.setup_kamal file not found${NC}"
+        echo "Please create the configuration file first:"
+        echo "  1. Copy env.setup_kamal.example to .env.setup_kamal"
+        echo "  2. Edit .env.setup_kamal with your configuration values"
+        echo "  3. Run this script again with --dev -p"
+        echo ""
+        echo "Example:"
+        echo "  cp env.setup_kamal.example .env.setup_kamal"
+        echo "  # Edit .env.setup_kamal with your values"
+        echo "  ./bin/setup_kamal --dev -p"
+        exit 1
+    fi
+    
+    echo -e "${BLUE}📄 Loading configuration from .env.setup_kamal...${NC}"
+    
+    # Source the environment file
+    source "$env_file"
+    
+    # Validate required variables
+    local required_vars=(
+        "FRONTEND_DOMAIN"
+        "SERVER_HOST" 
+        "SSH_USER"
+        "SSH_PORT"
+        "KAMAL_REGISTRY_TOKEN"
+        "POSTGRES_PASSWORD"
+        "DATABASE_NAME"
+        "SSL_EMAIL"
+        "RAILS_ENV"
+        "WEB_CONCURRENCY"
+        "RAILS_MAX_THREADS"
+        "BUILD_ARCH"
+        "DETAILED_LOGGING"
+        "LOG_LEVEL"
+    )
+    
+    local missing_vars=()
+    for var in "${required_vars[@]}"; do
+        if [ -z "${!var}" ]; then
+            missing_vars+=("$var")
+        fi
+    done
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Error: Missing required variables in .env.setup_kamal:${NC}"
+        for var in "${missing_vars[@]}"; do
+            echo "  - $var"
+        done
+        echo ""
+        echo "Please check your .env.setup_kamal file and ensure all required variables are set."
+        exit 1
+    fi
+    
+    # Set derived variables
+    API_DOMAIN="$FRONTEND_DOMAIN"
+    REGISTRY_SERVER="${REGISTRY_SERVER:-registry.digitalocean.com}"
+    REGISTRY_NAMESPACE="${REGISTRY_NAMESPACE:-cervera}"
+    REGISTRY_USERNAME="${REGISTRY_USERNAME:-do_access_token}"
+    STORAGE_TYPE="${STORAGE_TYPE:-local}"
+    
+    echo -e "${GREEN}✅ Configuration loaded successfully from .env.setup_kamal${NC}"
+}
+
 # Function to collect all configuration
 collect_config() {
     local dev_mode="$1"
+    local preset_mode="$2"
+    
+    # If in preset mode, skip all interactive questions
+    if [ "$preset_mode" = "-p" ]; then
+        echo -e "${GREEN}✅ Using preset configuration from .env.setup_kamal${NC}"
+        return 0
+    fi
     
     # DNS Requirements Explanation
     echo ""
     echo -e "${BLUE}🌐 DNS Setup Requirements${NC}"
     echo "============================="
-    echo "This application requires TWO separate domain names:"
+    echo "The Asset Management System requires TWO separate domain names:"
     echo ""
     echo "1. Application Domain: Where users access the web interface and API"
     echo "   Example: assets.yourdomain.com"
@@ -170,7 +226,7 @@ collect_config() {
     echo ""
     echo -e "${BLUE}🖥️  Deployment Server Configuration${NC}"
     echo "====================================="
-    echo "This is the server where the application will be deployed."
+    echo "This is the server where the Asset Management System will be deployed."
     echo "It should be a Linux server (Ubuntu/CentOS/Debian)."
     echo "Docker will be installed automatically by Kamal if not present."
     echo "The server will host both the frontend and API applications."
@@ -182,10 +238,10 @@ collect_config() {
     echo ""
     echo -e "${BLUE}🐳 Docker Registry Configuration${NC}"
     echo "=================================="
-    echo "Using pre-built images from your container registry"
-    REGISTRY_SERVER="your-registry.com"
-    REGISTRY_NAMESPACE="your-namespace"
-    REGISTRY_USERNAME="your-registry-username"
+    echo "Using pre-built images from DigitalOcean Container Registry"
+    REGISTRY_SERVER="registry.digitalocean.com"
+    REGISTRY_NAMESPACE="cervera"
+    REGISTRY_USERNAME="do_access_token"
     echo "Registry Server: $REGISTRY_SERVER"
     echo "Registry Namespace: $REGISTRY_NAMESPACE"
     echo "Registry Username: $REGISTRY_USERNAME"
@@ -238,7 +294,7 @@ collect_config() {
                     ;;
             esac
         else
-            collect_input "Enter your Registry Access Token (read/write for building)" "" "KAMAL_REGISTRY_TOKEN"
+            collect_input "Enter DigitalOcean Registry Access Token (read/write for building)" "" "KAMAL_REGISTRY_TOKEN"
             read -p "Save this token to KAMAL_REGISTRY_TOKEN environment variable? (y/n): " save_token
             case $save_token in
                 [Yy]* )
@@ -261,15 +317,15 @@ collect_config() {
         fi
     else
         echo "You need a read-only access token to pull the pre-built images."
-        echo "Contact your administrator to obtain your registry access token."
-        collect_input "Registry Access Token (contact administrator for access)" "" "KAMAL_REGISTRY_TOKEN"
+        echo "Contact the developer to obtain your DigitalOcean registry access token."
+        collect_input "DigitalOcean Registry Access Token (contact developer for access)" "" "KAMAL_REGISTRY_TOKEN"
     fi
 
     echo ""
     echo -e "${BLUE}🗄️ Database Configuration${NC}"
     echo "============================="
     collect_input "Create database password" "" "POSTGRES_PASSWORD"
-    collect_input "Database name" "your_app_production" "DATABASE_NAME"
+    collect_input "Database name" "asset_management_production" "DATABASE_NAME"
 
     echo ""
     echo -e "${BLUE}📦 Storage Configuration${NC}"
@@ -367,7 +423,7 @@ create_config_files() {
 # Generated on $(date)
 
 service: api
-image: $REGISTRY_NAMESPACE/your-app-api
+image: $REGISTRY_NAMESPACE/asset-management-system
 
 # Deploy to these servers.
 servers:
@@ -518,7 +574,7 @@ EOF
 # Generated on $(date)
 
 service: frontend
-image: $REGISTRY_NAMESPACE/your-app-web
+image: $REGISTRY_NAMESPACE/asset-management-system-web
 
 # Deploy to these servers.
 servers:
@@ -647,16 +703,16 @@ run_deployment() {
     echo ""
     echo -e "${GREEN}🎉 Complete deployment successful!${NC}"
     echo ""
-    echo -e "${BLUE}📋 Your application is now running:${NC}"
+    echo -e "${BLUE}📋 Your Asset Management System is now running:${NC}"
     echo "  🌐 Web Interface: http://$FRONTEND_DOMAIN"
     echo "  🔧 API: http://$FRONTEND_DOMAIN/api"
     echo "  🗄️  Database: PostgreSQL with Redis"
     echo ""
     echo -e "${YELLOW}💡 Default admin credentials:${NC}"
-    echo "  Email: admin@yourdomain.com"
-    echo "  Password: your-secure-password"
+    echo "  Email: admin@example.com"
+    echo "  Password: password"
     echo ""
-    echo -e "${GREEN}✅ You can now access your application!${NC}"
+    echo -e "${GREEN}✅ You can now access your Asset Management System!${NC}"
 }
 
 deploy_api() {
@@ -690,8 +746,8 @@ deploy_api() {
         # Validate that the image exists
         echo ""
         echo -e "${BLUE}🔍 Validating API image exists in registry...${NC}"
-        if ! docker manifest inspect "$REGISTRY_SERVER/$REGISTRY_NAMESPACE/your-app-api:latest" &> /dev/null; then
-            echo -e "${RED}❌ API image not found in registry: $REGISTRY_SERVER/$REGISTRY_NAMESPACE/your-app-api:latest${NC}"
+        if ! docker manifest inspect "$REGISTRY_SERVER/$REGISTRY_NAMESPACE/asset-management-system:latest" &> /dev/null; then
+            echo -e "${RED}❌ API image not found in registry: $REGISTRY_SERVER/$REGISTRY_NAMESPACE/asset-management-system:latest${NC}"
             echo -e "${YELLOW}💡 This could mean:${NC}"
             echo "  - The image hasn't been built and pushed yet"
             echo "  - The registry URL is incorrect"
@@ -767,8 +823,8 @@ deploy_web() {
         # Validate that the image exists
         echo ""
         echo -e "${BLUE}🔍 Validating web image exists in registry...${NC}"
-        if ! docker manifest inspect "$REGISTRY_SERVER/$REGISTRY_NAMESPACE/your-app-web:latest" &> /dev/null; then
-            echo -e "${RED}❌ Web image not found in registry: $REGISTRY_SERVER/$REGISTRY_NAMESPACE/your-app-web:latest${NC}"
+        if ! docker manifest inspect "$REGISTRY_SERVER/$REGISTRY_NAMESPACE/asset-management-system-web:latest" &> /dev/null; then
+            echo -e "${RED}❌ Web image not found in registry: $REGISTRY_SERVER/$REGISTRY_NAMESPACE/asset-management-system-web:latest${NC}"
             echo -e "${YELLOW}💡 This could mean:${NC}"
             echo "  - The image hasn't been built and pushed yet"
             echo "  - The registry URL is incorrect"
@@ -828,7 +884,7 @@ check_existing_containers() {
     # Check for volumes, networks, and images
     local existing_volumes=$(ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker volume ls --filter name=api --filter name=frontend --filter name=kamal --format '{{.Name}}' 2>/dev/null || echo ''" 2>/dev/null || echo "")
     local existing_networks=$(ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker network ls --filter name=kamal --format '{{.Name}}' 2>/dev/null || echo ''" 2>/dev/null || echo "")
-    local existing_images=$(ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker images --filter reference='*your-app*' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || echo ''" 2>/dev/null || echo "")
+    local existing_images=$(ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker images --filter reference='*asset-management*' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || echo ''" 2>/dev/null || echo "")
     local existing_directories=$(ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "ls -d /root/*postgres* /root/*redis* 2>/dev/null | head -5" 2>/dev/null || echo "")
     
     local has_existing=false
@@ -866,7 +922,7 @@ check_existing_containers() {
         fi
         
         echo ""
-        echo -e "${YELLOW}This usually indicates a previous application deployment.${NC}"
+        echo -e "${YELLOW}This usually indicates a previous Asset Management System deployment.${NC}"
         echo -e "${YELLOW}To avoid password conflicts and ensure a clean deployment,${NC}"
         echo -e "${YELLOW}we recommend removing existing containers first.${NC}"
         echo -e "${GREEN}Note: Only containers tagged with our service labels will be affected.${NC}"
@@ -874,7 +930,7 @@ check_existing_containers() {
         
         while true; do
             echo "Choose cleanup option:"
-            echo "1) Remove only your application containers (recommended)"
+            echo "1) Remove only Asset Management System containers (recommended)"
             echo "2) Skip cleanup (may cause deployment issues)"
             echo "3) Remove all Docker objects (containers, images, volumes, networks) but keep Docker installed"
             echo -e "${RED}4) Complete server wipe - Remove Docker entirely and reinstall (nuclear option)${NC}"
@@ -886,38 +942,38 @@ check_existing_containers() {
                     
                     # Remove existing containers (only those with our specific service labels)
                     if [ -n "$api_containers" ]; then
-                        echo "  Removing your application API containers..."
+                        echo "  Removing Asset Management System API containers..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop $api_containers 2>/dev/null || true; docker rm $api_containers 2>/dev/null || true"
                     fi
                     if [ -n "$web_containers" ]; then
-                        echo "  Removing your application Web containers..."
+                        echo "  Removing Asset Management System Web containers..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop $web_containers 2>/dev/null || true; docker rm $web_containers 2>/dev/null || true"
                     fi
                     if [ -n "$frontend_containers" ]; then
-                        echo "  Removing your application Frontend containers..."
+                        echo "  Removing Asset Management System Frontend containers..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop $frontend_containers 2>/dev/null || true; docker rm $frontend_containers 2>/dev/null || true"
                     fi
                     if [ -n "$postgres_containers" ]; then
-                        echo "  Removing your application PostgreSQL containers..."
+                        echo "  Removing Asset Management System PostgreSQL containers..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop $postgres_containers 2>/dev/null || true; docker rm $postgres_containers 2>/dev/null || true"
                     fi
                     if [ -n "$redis_containers" ]; then
-                        echo "  Removing your application Redis containers..."
+                        echo "  Removing Asset Management System Redis containers..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop $redis_containers 2>/dev/null || true; docker rm $redis_containers 2>/dev/null || true"
                     fi
                     
                     # Remove existing volumes and networks
                     if [ -n "$existing_volumes" ]; then
-                        echo "  Removing your application volumes..."
+                        echo "  Removing Asset Management System volumes..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker volume rm $existing_volumes 2>/dev/null || true"
                     fi
                     if [ -n "$existing_networks" ]; then
-                        echo "  Removing your application networks..."
+                        echo "  Removing Asset Management System networks..."
                         ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker network rm $existing_networks 2>/dev/null || true"
                     fi
                     
                     # Remove existing data directories to ensure fresh database initialization
-                    echo "  Removing your application data directories..."
+                    echo "  Removing Asset Management System data directories..."
                     ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "rm -rf /root/api-postgres /root/api-redis /root/frontend-postgres /root/frontend-redis 2>/dev/null || true"
                     ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "find /root -name '*postgres*' -type d -exec rm -rf {} + 2>/dev/null || true"
                     ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "find /root -name '*redis*' -type d -exec rm -rf {} + 2>/dev/null || true"
@@ -1035,7 +1091,7 @@ check_existing_containers() {
             esac
         done
     else
-        echo -e "${GREEN}✅ No existing application containers found. Ready for fresh deployment.${NC}"
+        echo -e "${GREEN}✅ No existing Asset Management System containers found. Ready for fresh deployment.${NC}"
     fi
 }
 
@@ -1067,20 +1123,138 @@ show_manual_commands() {
     echo ""
 }
 
+# Function to perform nuclear server wipe
+nuclear_server_wipe() {
+    echo ""
+    echo -e "${RED}🚨 NUCLEAR OPTION: Complete server wipe in progress...${NC}"
+    echo -e "${RED}This will remove Docker entirely and reinstall it.${NC}"
+    echo -e "${RED}ALL Docker containers, images, volumes, networks, and persistent storage will be lost!${NC}"
+    echo ""
+    
+    # Stop all containers
+    echo "  Stopping all Docker containers..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker stop \$(docker ps -aq) 2>/dev/null || true"
+    
+    # Remove all containers
+    echo "  Removing all Docker containers..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker rm \$(docker ps -aq) 2>/dev/null || true"
+    
+    # Remove all images
+    echo "  Removing all Docker images..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker rmi \$(docker images -aq) 2>/dev/null || true"
+    
+    # Remove all volumes
+    echo "  Removing all Docker volumes..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker volume rm \$(docker volume ls -q) 2>/dev/null || true"
+    
+    # Remove all networks
+    echo "  Removing all Docker networks..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker network rm \$(docker network ls -q) 2>/dev/null || true"
+    
+    # Remove Docker system
+    echo "  Removing Docker system..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "docker system prune -af --volumes 2>/dev/null || true"
+    
+    # Remove all persistent data directories
+    echo "  Removing all persistent data directories..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "rm -rf /root/api-postgres /root/api-redis /root/frontend-postgres /root/frontend-redis /root/*-postgres /root/*-redis 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "rm -rf /var/lib/docker/volumes/* 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "find /root -name '*postgres*' -type d -exec rm -rf {} + 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "find /root -name '*redis*' -type d -exec rm -rf {} + 2>/dev/null || true"
+    
+    # Uninstall Docker
+    echo "  Uninstalling Docker..."
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$SSH_USER@$SERVER_HOST" "rm -rf /var/lib/docker /var/lib/containerd /etc/docker 2>/dev/null || true"
+    
+    # Reinstall Docker using kamal setup
+    echo "  Docker will be reinstalled automatically when kamal setup runs..."
+    
+    echo -e "${GREEN}✅ Nuclear server wipe completed!${NC}"
+    echo -e "${GREEN}Server is now ready for fresh deployment.${NC}"
+}
+
+# Function to select setup type
+select_setup_type() {
+    echo ""
+    echo -e "${BLUE}🔧 Setup Type Selection${NC}"
+    echo "========================"
+    echo "Please select the type of setup you want to perform:"
+    echo ""
+    echo "1) Standard Customer Deployment (pull existing images)"
+    echo "2) Developer Deployment (build and push new images)"
+    echo "3) Developer Deployment with Preset Configuration (--dev -p)"
+    echo -e "${RED}4) Nuclear Option - Complete server wipe and fresh deployment${NC}"
+    echo ""
+    
+    while true; do
+        read -p "Enter choice [1-4]: " setup_choice
+        case $setup_choice in
+            1)
+                echo -e "${GREEN}✅ Selected: Standard Customer Deployment${NC}"
+                SETUP_TYPE="customer"
+                DEV_MODE=""
+                PRESET_MODE=""
+                break
+                ;;
+            2)
+                echo -e "${GREEN}✅ Selected: Developer Deployment${NC}"
+                SETUP_TYPE="developer"
+                DEV_MODE="--dev"
+                PRESET_MODE=""
+                break
+                ;;
+            3)
+                echo -e "${GREEN}✅ Selected: Developer Deployment with Preset Configuration${NC}"
+                SETUP_TYPE="developer_preset"
+                DEV_MODE="--dev"
+                PRESET_MODE="-p"
+                break
+                ;;
+            4)
+                echo -e "${RED}⚠️  Selected: Nuclear Option - Complete Server Wipe${NC}"
+                echo -e "${RED}This will completely wipe the server and start fresh!${NC}"
+                read -p "Are you absolutely sure? Type 'YES' to confirm: " confirm_nuclear
+                if [ "$confirm_nuclear" = "YES" ]; then
+                    SETUP_TYPE="nuclear"
+                    DEV_MODE="--dev"
+                    PRESET_MODE=""
+                    echo -e "${RED}✅ Nuclear option confirmed${NC}"
+                    break
+                else
+                    echo -e "${YELLOW}Nuclear option cancelled. Please select another option.${NC}"
+                    continue
+                fi
+                ;;
+            *)
+                echo -e "${YELLOW}Please enter 1, 2, 3, or 4.${NC}"
+                ;;
+        esac
+    done
+}
+
 # Main script logic
 main() {
     # Check for help flag
     if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-        echo "Usage: $0 [--dev]"
+        echo "Usage: $0 [--dev] [-p]"
         echo ""
         echo "Options:"
         echo "  --dev    Developer mode: Build and push images to registry"
-        echo "           Uses KAMAL_REGISTRY_TOKEN environment variable if available"
-        echo "           Default: Customer mode: Pull existing images only"
+        echo "  -p       Preset mode: Use configuration from .env.setup_kamal file"
+        echo "           (skips interactive configuration questions)"
         echo ""
         echo "Examples:"
-        echo "  $0           # Customer deployment (pull existing images)"
-        echo "  $0 --dev     # Developer deployment (build and push images)"
+        echo "  $0              # Interactive setup with customer mode"
+        echo "  $0 --dev        # Interactive setup with developer mode"
+        echo "  $0 --dev -p     # Non-interactive setup with preset configuration"
+        echo ""
+        echo "Setup Types (selected interactively if no flags provided):"
+        echo "  1) Standard Customer Deployment (pull existing images)"
+        echo "  2) Developer Deployment (build and push new images)"  
+        echo "  3) Developer Deployment with Preset Configuration"
+        echo "  4) Nuclear Option - Complete server wipe and fresh deployment"
         exit 0
     fi
     
@@ -1091,34 +1265,77 @@ main() {
         exit 1
     fi
 
-    # Collect configuration
-    collect_config "$1"
+    # Parse command line arguments
+    DEV_MODE=""
+    PRESET_MODE=""
+    SETUP_TYPE=""
     
-    # Show summary and get confirmation
-    while true; do
+    # Check for --dev -p combination
+    if [ "$1" = "--dev" ] && [ "$2" = "-p" ]; then
+        DEV_MODE="--dev"
+        PRESET_MODE="-p"
+        SETUP_TYPE="developer_preset"
+        echo -e "${BLUE}🚀 Developer mode with preset configuration enabled${NC}"
+        load_env_config
+    elif [ "$1" = "--dev" ]; then
+        DEV_MODE="--dev"
+        SETUP_TYPE="developer"
+        echo -e "${BLUE}🚀 Developer mode enabled${NC}"
+    elif [ "$1" = "-p" ]; then
+        echo -e "${RED}❌ Error: -p flag requires --dev flag${NC}"
+        echo "Usage: $0 --dev -p"
+        exit 1
+    else
+        # No flags provided, show interactive setup type selection
+        select_setup_type
+    fi
+
+    # Load configuration based on setup type
+    if [ "$SETUP_TYPE" = "developer_preset" ]; then
+        # Configuration already loaded by load_env_config above
+        :
+    else
+        # Collect configuration interactively
+        collect_config "$DEV_MODE" "$PRESET_MODE"
+    fi
+    
+    # Show summary and get confirmation (skip in preset mode)
+    if [ "$PRESET_MODE" = "-p" ]; then
+        echo -e "${GREEN}✅ Using preset configuration, skipping confirmation${NC}"
         show_summary
-        read -p "Is this correct? (y/n/e for edit): " confirm
-        
-        case $confirm in
-            [Yy]* )
-                break
-                ;;
-            [Nn]* )
-                echo -e "${YELLOW}Setup cancelled.${NC}"
-                exit 0
-                ;;
-            [Ee]* )
-                echo -e "${BLUE}Re-running configuration with current values as defaults...${NC}"
-                collect_config
-                ;;
-            * )
-                echo -e "${YELLOW}Please answer y (yes), n (no), or e (edit).${NC}"
-                ;;
-        esac
-    done
+    else
+        while true; do
+            show_summary
+            read -p "Is this correct? (y/n/e for edit): " confirm
+            
+            case $confirm in
+                [Yy]* )
+                    break
+                    ;;
+                [Nn]* )
+                    echo -e "${YELLOW}Setup cancelled.${NC}"
+                    exit 0
+                    ;;
+                [Ee]* )
+                    echo -e "${BLUE}Re-running configuration with current values as defaults...${NC}"
+                    collect_config "$DEV_MODE" "$PRESET_MODE"
+                    ;;
+                * )
+                    echo -e "${YELLOW}Please answer y (yes), n (no), or e (edit).${NC}"
+                    ;;
+            esac
+        done
+    fi
     
-    # Check for existing containers and offer cleanup
-    check_existing_containers
+    # Handle nuclear option
+    if [ "$SETUP_TYPE" = "nuclear" ]; then
+        echo -e "${RED}🚨 Executing Nuclear Option - Complete Server Wipe${NC}"
+        # Force cleanup option 4 (complete server wipe)
+        nuclear_server_wipe
+    else
+        # Check for existing containers and offer cleanup
+        check_existing_containers
+    fi
     
     # Generate secrets
     get_rails_master_key
@@ -1137,41 +1354,46 @@ main() {
     echo "  - No environment variables need to be set manually"
     echo ""
     
-    # Ask if user wants to deploy now
-    echo -e "${BLUE}🚀 Ready to deploy now? (y/n):${NC}"
-    read -p "" deploy_now
-    
-    case $deploy_now in
-        [Yy]* )
-            echo ""
-            echo -e "${YELLOW}⚠️  Important: This will attempt to deploy using your registry token.${NC}"
-            echo "If you encounter authentication errors, it means:"
-            echo "  - Your registry token is invalid or expired"
-            echo "  - You need a fresh token from the developer"
-            echo "  - The token doesn't have the correct permissions"
-            echo ""
-            read -p "Continue with deployment? (y/n): " confirm_deploy
-            case $confirm_deploy in
-                [Yy]* )
-                    run_deployment "$1"
-                    ;;
-                [Nn]* )
-                    show_manual_commands
-                    ;;
-                * )
-                    echo -e "${YELLOW}Assuming no. Showing manual commands...${NC}"
-                    show_manual_commands
-                    ;;
-            esac
-            ;;
-        [Nn]* )
-            show_manual_commands
-            ;;
-        * )
-            echo -e "${YELLOW}Assuming no. Showing manual commands...${NC}"
-            show_manual_commands
-            ;;
-    esac
+    # Ask if user wants to deploy now (skip in preset mode)
+    if [ "$PRESET_MODE" = "-p" ]; then
+        echo -e "${GREEN}✅ Preset mode: Starting deployment automatically${NC}"
+        run_deployment "$DEV_MODE"
+    else
+        echo -e "${BLUE}🚀 Ready to deploy now? (y/n):${NC}"
+        read -p "" deploy_now
+        
+        case $deploy_now in
+            [Yy]* )
+                echo ""
+                echo -e "${YELLOW}⚠️  Important: This will attempt to deploy using your registry token.${NC}"
+                echo "If you encounter authentication errors, it means:"
+                echo "  - Your registry token is invalid or expired"
+                echo "  - You need a fresh token from the developer"
+                echo "  - The token doesn't have the correct permissions"
+                echo ""
+                read -p "Continue with deployment? (y/n): " confirm_deploy
+                case $confirm_deploy in
+                    [Yy]* )
+                        run_deployment "$DEV_MODE"
+                        ;;
+                    [Nn]* )
+                        show_manual_commands
+                        ;;
+                    * )
+                        echo -e "${YELLOW}Assuming no. Showing manual commands...${NC}"
+                        show_manual_commands
+                        ;;
+                esac
+                ;;
+            [Nn]* )
+                show_manual_commands
+                ;;
+            * )
+                echo -e "${YELLOW}Assuming no. Showing manual commands...${NC}"
+                show_manual_commands
+                ;;
+        esac
+    fi
     
     echo ""
     echo -e "${GREEN}🎉 Setup complete!${NC}"

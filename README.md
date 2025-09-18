@@ -571,7 +571,56 @@ nano setup_kamal.sh
 - `your-app-web` → Your actual web image name
 - `yourdomain.com` → Your actual domain
 
-#### 2. Run the Script
+#### 2. Setup Configuration File (Optional)
+
+For automated deployments without interactive prompts, you can create a preset configuration file:
+
+```bash
+# Copy the example configuration file
+cp env.setup_kamal.example .env.setup_kamal
+
+# Edit the configuration file with your specific values
+nano .env.setup_kamal
+```
+
+**Configuration File Format**: The `.env.setup_kamal` file contains all the necessary configuration values for your deployment:
+
+```bash
+# Domain Configuration
+FRONTEND_DOMAIN=assets.yourhostname.com
+
+# Deployment Server Configuration
+SERVER_HOST=cloud.yourhostname.com
+SSH_USER=root
+SSH_PORT=22
+
+# Docker Registry Configuration
+REGISTRY_SERVER=registry.digitalocean.com
+REGISTRY_NAMESPACE=your_registry_namespace
+REGISTRY_USERNAME=do_access_token
+KAMAL_REGISTRY_TOKEN=your_registry_token
+
+# Database Configuration
+POSTGRES_PASSWORD=your_secure_database_password_here
+DATABASE_NAME=asset_management_production
+
+# SSL Configuration
+SSL_EMAIL=youremail@example.com
+
+# Application Configuration
+RAILS_ENV=production
+WEB_CONCURRENCY=2
+RAILS_MAX_THREADS=5
+
+# Build Platform Configuration (amd64 or arm64)
+BUILD_ARCH=amd64
+
+# Monitoring & Logging
+DETAILED_LOGGING=true
+LOG_LEVEL=info
+```
+
+#### 3. Run the Script
 
 ```bash
 # Customer mode (pull existing images)
@@ -579,6 +628,9 @@ nano setup_kamal.sh
 
 # Developer mode (build and push images)
 ./setup_kamal.sh --dev
+
+# Developer mode with preset configuration (no interactive prompts)
+./setup_kamal.sh --dev -p
 
 # Show help
 ./setup_kamal.sh --help
@@ -597,6 +649,17 @@ nano setup_kamal.sh
 - **Use case**: Development, testing, image updates
 - **Process**: Builds new images, pushes to registry, then deploys
 - **Requirements**: Read/write registry access token
+
+#### Preset Configuration Mode (`--dev -p`)
+- **Purpose**: Automated deployment using preset configuration file
+- **Use case**: CI/CD pipelines, scripted deployments, repeated deployments
+- **Process**: Reads configuration from `.env.setup_kamal` file, skips interactive prompts
+- **Requirements**: `.env.setup_kamal` file with all required configuration values
+- **Benefits**: 
+  - No manual input required
+  - Consistent deployments
+  - Perfect for automation scripts
+  - Faster deployment process
 
 ### Configuration Process
 
@@ -629,6 +692,22 @@ The script interactively collects:
 
 ### Script Features
 
+#### Command Line Options
+```bash
+# Available command line options
+./setup_kamal.sh --help           # Show help and usage information
+./setup_kamal.sh                  # Interactive customer mode
+./setup_kamal.sh --dev            # Interactive developer mode
+./setup_kamal.sh --dev -p         # Preset configuration mode (no prompts)
+```
+
+The `-p` flag enables **preset configuration mode**, which:
+- Reads all configuration values from `.env.setup_kamal` file
+- Skips all interactive prompts for fully automated deployment
+- Must be used with `--dev` flag for developer mode
+- Validates that all required configuration values are present
+- Perfect for CI/CD pipelines and scripted deployments
+
 #### Automatic Secret Management
 ```bash
 # Generates secure secrets automatically
@@ -655,7 +734,27 @@ The script creates:
 3. **Health checks**: Validates successful deployment
 4. **Lock management**: Prevents concurrent deployments
 
-### Example Workflow
+### Preset Configuration Workflow
+
+For automated deployments, you can use the preset configuration mode:
+
+```bash
+# 1. Create configuration file from example
+cp env.setup_kamal.example .env.setup_kamal
+
+# 2. Edit with your specific values
+nano .env.setup_kamal
+# Set FRONTEND_DOMAIN, SERVER_HOST, KAMAL_REGISTRY_TOKEN, etc.
+
+# 3. Run automated deployment
+./setup_kamal.sh --dev -p
+# No prompts - uses values from .env.setup_kamal
+# Automatically builds, pushes, and deploys
+```
+
+**Important**: The `.env.setup_kamal` file should never be committed to version control as it contains sensitive information like registry tokens and database passwords.
+
+### Interactive Workflow Example
 
 ```bash
 # 1. Run the script
@@ -705,6 +804,18 @@ The script creates:
 # 2. Skip cleanup (may cause issues)
 # 3. Remove all Docker objects
 # 4. Complete server wipe (nuclear option)
+```
+
+**Preset Configuration Issues**
+```bash
+# If you get "Error: .env.setup_kamal file not found":
+cp env.setup_kamal.example .env.setup_kamal
+# Edit .env.setup_kamal with your values
+./setup_kamal.sh --dev -p
+
+# If you get "Missing required variables" error:
+# Check that all required variables are set in .env.setup_kamal
+# The script will list which variables are missing
 ```
 
 #### Manual Deployment
